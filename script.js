@@ -15289,6 +15289,214 @@ const dictionary = [
   "rural",
   "shave",
 ]
+
+
+import {
+    getSolidDataset,
+    getThing,
+    setThing,
+    getThingAll,
+    getStringNoLocale,
+    addStringNoLocale,
+    setStringNoLocale,
+    addInteger,
+    saveSolidDatasetAt,
+    addUrl,
+    buildThing,
+    createSolidDataset,
+    createThing,
+    getInteger,
+    setInteger
+} from "@inrupt/solid-client";
+import { Session } from "@inrupt/solid-client-authn-browser";
+import { VCARD } from "@inrupt/vocab-common-rdf";
+import { overwriteFile, getSourceUrl } from "@inrupt/solid-client";
+import { SCHEMA_INRUPT, RDF, AS } from "@inrupt/vocab-common-rdf";
+
+
+// If your Pod is *not* on `solidcommunity.net`, change this to your identity provider.
+
+const SOLID_IDENTITY_PROVIDER = "https://solidcommunity.net";
+document.getElementById(
+    "solid_identity_provider"
+).innerHTML = `[<a target="_blank" href="${SOLID_IDENTITY_PROVIDER}">${SOLID_IDENTITY_PROVIDER}</a>]`;
+
+
+const session = new Session();
+
+const buttonLogin = document.getElementById("btnLogin");
+const buttonWrite = document.getElementById("btnWrite");
+
+// 1a. Start Login Process. Call session.login() function.
+
+async function login() {
+    if (!session.info.isLoggedIn) {
+        await session.login({
+            oidcIssuer: SOLID_IDENTITY_PROVIDER,
+            clientName: "Solid Wordle Clone",
+            redirectUrl: window.location.href
+        });
+    }
+}
+
+// 1b. Login Redirect. Call session.handleIncomingRedirect() function.
+// When redirected after login, finish the process by retrieving session information.
+
+async function handleRedirectAfterLogin() {
+    await session.handleIncomingRedirect(window.location.href);
+    if (session.info.isLoggedIn) {
+        // Update the page with the status.
+        document.getElementById(
+            "labelStatus"
+        ).innerHTML = `Your session is logged in with the WebID [<a target="_blank" href="${session.info.webId}">${session.info.webId}</a>].`;
+
+        // start the game
+        createStreak();
+        startInteraction();
+        
+    }
+}
+
+
+handleRedirectAfterLogin();
+
+buttonLogin.onclick = function () {
+    login()
+};
+
+// helper function for going up one directory
+
+function goUp(url) {
+    if (url.endsWith("/")) url = url.substring(0, url.length - 1)
+    const lastSlashPosition = url.lastIndexOf("/");
+
+    return lastSlashPosition <= 7 ? url : url.substring(0, lastSlashPosition);
+}
+
+// 2. Create the streak
+async function createStreak() {
+    let webID = session.info.webId;
+
+    webID = goUp(goUp(webID))
+
+    const folderURL = new URL(webID + "/Wordle/streak")
+
+    let myStreak;
+
+    try {
+        myStreak = await getSolidDataset(folderURL.href, { fetch: session.fetch });
+        console.log("streak found")
+
+    } catch (error) {
+        // if not found, create a new SolidDataset
+        let streakSolidDataset = createSolidDataset();
+        let streak = createThing({ name: "streak" });
+        streak = addStringNoLocale(streak, SCHEMA_INRUPT.name, "Wordle streak");
+        streak = addUrl(streak, RDF.type, "https://schema.org/Book");
+        streak = addInteger(streak, "https://schema.org/numberOfPages", 0);
+
+        streakSolidDataset = setThing(streakSolidDataset, streak);
+
+        await saveSolidDatasetAt(
+            folderURL.href,
+            streakSolidDataset,
+            { fetch: session.fetch }             // fetch from authenticated Session
+
+        );
+            
+    }
+
+}
+
+// 3. Update the streak if game lost or won
+
+async function winStreakUpdate() {
+    let webID = session.info.webId;
+
+    webID = goUp(goUp(webID))
+
+    const folderURL = new URL(webID + "/Wordle/streak")
+
+    const thingURL = new URL(folderURL.href + "#streak")
+
+    let myStreak;
+
+    try {
+        myStreak = await getSolidDataset(thingURL.href, { fetch: session.fetch });
+        console.log("streak found")
+        console.log(myStreak)
+        let item = getThing(myStreak, thingURL.href);
+        let currentStreak = getInteger(item, "https://schema.org/numberOfPages")
+
+        currentStreak += 1
+
+        // now overwrite the old dataset with a new updated one
+
+        let streakSolidDataset = createSolidDataset();
+        let streak = createThing({ name: "streak" });
+        streak = addStringNoLocale(streak, SCHEMA_INRUPT.name, "Wordle streak");
+        streak = addUrl(streak, RDF.type, "https://schema.org/Book");
+        streak = addInteger(streak, "https://schema.org/numberOfPages", currentStreak);
+
+        streakSolidDataset = setThing(streakSolidDataset, streak);
+
+        await saveSolidDatasetAt(
+            folderURL.href,
+            streakSolidDataset,
+            { fetch: session.fetch }             // fetch from authenticated Session
+
+        );
+        console.log(currentStreak)
+        showAlert("Congratulations! Your current streak: " + currentStreak + " days", 5000)
+
+    } catch (error) {
+        console.log(error)
+    }
+
+}
+
+async function loseStreakUpdate() {
+    let webID = session.info.webId;
+
+    webID = goUp(goUp(webID))
+
+    const folderURL = new URL(webID + "/Wordle/streak")
+
+    const thingURL = new URL(folderURL.href + "#streak")
+
+    let myStreak;
+
+    try {
+        myStreak = await getSolidDataset(thingURL.href, { fetch: session.fetch });
+        console.log("streak found")
+
+        // now overwrite the old dataset with a new updated one
+
+        let streakSolidDataset = createSolidDataset();
+        let streak = createThing({ name: "streak" });
+        streak = addStringNoLocale(streak, SCHEMA_INRUPT.name, "Wordle streak");
+        streak = addUrl(streak, RDF.type, "https://schema.org/Book");
+        streak = addInteger(streak, "https://schema.org/numberOfPages", 0);
+
+        streakSolidDataset = setThing(streakSolidDataset, streak);
+
+        await saveSolidDatasetAt(
+            folderURL.href,
+            streakSolidDataset,
+            { fetch: session.fetch }             // fetch from authenticated Session
+
+        );
+        console.log("0")
+        showAlert("Oof, looks like you just lost your streak!", 5000)
+
+    } catch (error) {
+        console.log(error)
+    }
+
+}
+
+//4. The actual game itself
+
 const WORD_LENGTH = 5
 const FLIP_ANIMATION_DURATION = 500
 const DANCE_ANIMATION_DURATION = 500
@@ -15300,11 +15508,9 @@ const msOffset = Date.now() - offsetFromDate
 const dayOffset = msOffset / 1000 / 60 / 60 / 24
 const targetWord = targetWords[Math.floor(dayOffset)]
 
-startInteraction()
-
 function startInteraction() {
-  document.addEventListener("click", handleMouseClick)
-  document.addEventListener("keydown", handleKeyPress)
+    document.addEventListener("click", handleMouseClick)
+    document.addEventListener("keydown", handleKeyPress)
 }
 
 function stopInteraction() {
@@ -15456,19 +15662,24 @@ function shakeTiles(tiles) {
 }
 
 function checkWinLose(guess, tiles) {
-  if (guess === targetWord) {
+    if (guess === targetWord) {
+    winStreakUpdate()
     showAlert("You Win", 5000)
+    showStreak()
+    newStreak()
     danceTiles(tiles)
     stopInteraction()
     return
   }
 
   const remainingTiles = guessGrid.querySelectorAll(":not([data-letter])")
-  if (remainingTiles.length === 0) {
+    if (remainingTiles.length === 0) {
+    loseStreakUpdate()
     showAlert(targetWord.toUpperCase(), null)
     stopInteraction()
   }
 }
+
 
 function danceTiles(tiles) {
   tiles.forEach((tile, index) => {
